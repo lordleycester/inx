@@ -62,9 +62,9 @@ class MutexGuard {
   bool acquired;
 
  public:
-  explicit MutexGuard(SemaphoreHandle_t& m) : mutex(m), acquired(false) {
+  explicit MutexGuard(SemaphoreHandle_t& m, TickType_t timeout = pdMS_TO_TICKS(100)) : mutex(m), acquired(false) {
     if (mutex) {
-      acquired = (xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE);
+      acquired = (xSemaphoreTake(mutex, timeout) == pdTRUE);
     }
   }
 
@@ -1068,8 +1068,13 @@ void LibraryActivity::onExit() {
  */
 void LibraryActivity::goToNextPage() {
   if (currentPage < totalPages - 1) {
+    MutexGuard guard(renderingMutex, pdMS_TO_TICKS(1000));
+    if (renderingMutex && !guard.isAcquired()) {
+      return;
+    }
+
     currentPage++;
-    loadAllBooksRecursive();
+    loadAllBooksRecursiveLocked();
     selectorIndex = 0;
     listScrollOffset = 0;
     updateRequired = true;
@@ -1081,8 +1086,13 @@ void LibraryActivity::goToNextPage() {
  */
 void LibraryActivity::goToPreviousPage() {
   if (currentPage > 0) {
+    MutexGuard guard(renderingMutex, pdMS_TO_TICKS(1000));
+    if (renderingMutex && !guard.isAcquired()) {
+      return;
+    }
+
     currentPage--;
-    loadAllBooksRecursive();
+    loadAllBooksRecursiveLocked();
     selectorIndex = 0;
     listScrollOffset = 0;
     updateRequired = true;
