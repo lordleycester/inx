@@ -493,6 +493,15 @@ bool LibraryActivity::directoryHasBooks(const std::string& path) {
  * @brief Loads all books with pagination - only scans what's needed for current page
  */
 void LibraryActivity::loadAllBooksRecursive() {
+  MutexGuard guard(renderingMutex);
+  if (renderingMutex && !guard.isAcquired()) {
+    return;
+  }
+
+  loadAllBooksRecursiveLocked();
+}
+
+void LibraryActivity::loadAllBooksRecursiveLocked() {
   if (SETTINGS.useLibraryIndex) {
     loadLibraryFromIndex();
   } else {
@@ -875,7 +884,7 @@ void LibraryActivity::taskTrampoline(void* param) { static_cast<LibraryActivity*
  * @brief Display task loop that handles periodic rendering
  */
 void LibraryActivity::displayTaskLoop() {
-  while (true) {
+  while (!displayTaskStopRequested_) {
     {
       MutexGuard guard(renderingMutex);
       if (guard.isAcquired() && updateRequired) {
@@ -889,6 +898,9 @@ void LibraryActivity::displayTaskLoop() {
     }
     vTaskDelay(pdMS_TO_TICKS(50));
   }
+
+  displayTaskHandle = nullptr;
+  vTaskDelete(nullptr);
 }
 
 /**
@@ -1006,6 +1018,7 @@ void LibraryActivity::onEnter() {
   Activity::onEnter();
   renderingMutex = xSemaphoreCreateMutex();
   if (!renderingMutex) return;
+  displayTaskStopRequested_ = false;
   halfRefreshOnLoadApplied_ = false;
   renderer.clearScreen(0xff);
 
@@ -1026,6 +1039,12 @@ void LibraryActivity::onEnter() {
  * @brief Called when exiting the activity
  */
 void LibraryActivity::onExit() {
+  displayTaskStopRequested_ = true;
+  const unsigned long stopStart = millis();
+  while (displayTaskHandle && millis() - stopStart < 1500) {
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+
   SETTINGS.librarySortMode = sortModeToStorage(currentSortMode);
   SETTINGS.saveToFile();
 
@@ -1597,9 +1616,6 @@ void LibraryActivity::renderItemText(const LibraryItem& item, int drawY, int ite
  * @brief Load library items from index file (optimized for performance)
  */
 void LibraryActivity::loadLibraryFromIndex() {
-  MutexGuard guard(renderingMutex);
-  if (!guard.isAcquired()) return;
-
   allBooksList.clear();
   libraryItems.clear();
   currentPageItems.clear();

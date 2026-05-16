@@ -117,6 +117,7 @@ class LibraryActivity final : public Activity, public Menu {
   TaskHandle_t displayTaskHandle = nullptr;    ///< Handle for display update task
   SemaphoreHandle_t renderingMutex = nullptr;  ///< Mutex for render thread safety
   bool halfRefreshOnLoadApplied_ = false;
+  volatile bool displayTaskStopRequested_ = false;
 
   std::string savedFolderPath;  ///< Saved path when switching views
   std::string basepath;         ///< Current browsing path
@@ -321,6 +322,7 @@ class LibraryActivity final : public Activity, public Menu {
    * @brief Load all books recursively with pagination
    */
   void loadAllBooksRecursive();
+  void loadAllBooksRecursiveLocked();
 
   /**
    * @brief Load books using recursive scan for book list view
