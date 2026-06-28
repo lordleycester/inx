@@ -13,8 +13,9 @@
    */
   var SIZES = [10, 12, 14, 16, 18];
   var RASTER_CALIBRATION = 0.74;
-  /** Lower → bolder; higher → thinner (only used with binary grayToStored). */
-  var PACK_EDGE_LUM_THRESHOLD = 178;
+  var PACK_LIGHT_GRAY_LUM_THRESHOLD = 212;
+  var PACK_DARK_GRAY_LUM_THRESHOLD = 132;
+  var PACK_BLACK_LUM_THRESHOLD = 52;
 
   function readerStepToCanvasPx(step) {
     var base;
@@ -100,12 +101,11 @@
     return t;
   }
 
-  /**
-   * BW renderer treats stored 1 and 2 as full ink (same as 3). Only 0 is paper.
-   * Use binary 0|3 and a luminance cutoff so anti-alias grays do not become fat black.
-   */
   function grayToStored(L) {
-    return L >= PACK_EDGE_LUM_THRESHOLD ? 0 : 3;
+    if (L >= PACK_LIGHT_GRAY_LUM_THRESHOLD) return 0;
+    if (L >= PACK_DARK_GRAY_LUM_THRESHOLD) return 1;
+    if (L >= PACK_BLACK_LUM_THRESHOLD) return 2;
+    return 3;
   }
 
   function pack2bitLinear(padW, h, getLum) {

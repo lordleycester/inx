@@ -26,11 +26,11 @@ void ExternalFont::bitmapCacheClear() {
       m_bitmapCache[i].stamp = 0;
     }
   }
-  memset(m_lowercaseGlyphOffsets, 0, sizeof(m_lowercaseGlyphOffsets));
+  memset(m_cachedGlyphOffsets, 0, sizeof(m_cachedGlyphOffsets));
   m_bitmapCacheGen = 0;
 }
 
-void ExternalFont::setLowercaseGlyphBitmapCacheEnabled(const bool enabled) {
+void ExternalFont::setGlyphBitmapCacheEnabled(const bool enabled) {
   m_bitmapCacheEnabled = enabled;
   if (!enabled) {
     delete[] m_bitmapCache;
@@ -243,23 +243,23 @@ bool ExternalFont::bitmapCacheCanStore(const uint32_t offset, const uint32_t len
     return false;
   }
   for (size_t i = 0; i < kGlyphBitmapCacheSlots; ++i) {
-    if (m_lowercaseGlyphOffsets[i] == offset) {
+    if (m_cachedGlyphOffsets[i] == offset) {
       return true;
     }
   }
   return false;
 }
 
-void ExternalFont::rememberLowercaseGlyphOffset(const uint32_t offset) {
+void ExternalFont::rememberGlyphBitmapOffset(const uint32_t offset) {
   if (!m_bitmapCacheEnabled || offset == 0) {
     return;
   }
   for (size_t i = 0; i < kGlyphBitmapCacheSlots; ++i) {
-    if (m_lowercaseGlyphOffsets[i] == offset) {
+    if (m_cachedGlyphOffsets[i] == offset) {
       return;
     }
-    if (m_lowercaseGlyphOffsets[i] == 0) {
-      m_lowercaseGlyphOffsets[i] = offset;
+    if (m_cachedGlyphOffsets[i] == 0) {
+      m_cachedGlyphOffsets[i] = offset;
       return;
     }
   }
@@ -308,9 +308,7 @@ bool ExternalFont::getGlyphMetadata(uint32_t cp, EpdGlyph& out) {
   }
   decodeGlyphRow(entry, out);
   metaCacheStore(cp, out);
-  if (cp >= static_cast<uint32_t>('a') && cp <= static_cast<uint32_t>('z')) {
-    rememberLowercaseGlyphOffset(out.dataOffset);
-  }
+  rememberGlyphBitmapOffset(out.dataOffset);
   return true;
 }
 
