@@ -138,6 +138,7 @@ private:
         BionicReading,       ///< Bionic Reading toggle
         AntiAliasing,        ///< Text anti-aliasing toggle
         RefreshRate,         ///< Display refresh frequency
+        ReaderPowerButton,   ///< Reader short power button behavior
         ChapterSkip,         ///< Long-press chapter skip toggle
         NavigationLock,      ///< Navigation lock setting
         

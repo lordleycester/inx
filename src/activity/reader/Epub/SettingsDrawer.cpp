@@ -485,6 +485,33 @@ void SettingsDrawer::setupMenu() {
     };
     menuItems.push_back(refreshEntry);
 
+    MenuEntry powerEntry;
+    powerEntry.item = MenuItem::ReaderPowerButton;
+    powerEntry.group = GroupType::CONTROLS;
+    powerEntry.name = "Power Button";
+    powerEntry.getValueText = [](const BookSettings&) -> const char* {
+      switch (SETTINGS.readerShortPwrBtn) {
+        case SystemSetting::READER_SHORT_PWRBTN::READER_PAGE_REFRESH:
+          return "Page Refresh";
+        case SystemSetting::READER_SHORT_PWRBTN::READER_ANNOTATE:
+          return "Annotate";
+        default:
+          return "Page Turn";
+      }
+    };
+    powerEntry.change = [](BookSettings&, int delta) {
+      int v = static_cast<int>(SETTINGS.readerShortPwrBtn) + delta;
+      if (v < 0) {
+        v = SystemSetting::READER_SHORT_PWRBTN::READER_SHORT_PWRBTN_COUNT - 1;
+      }
+      if (v >= SystemSetting::READER_SHORT_PWRBTN::READER_SHORT_PWRBTN_COUNT) {
+        v = 0;
+      }
+      SETTINGS.readerShortPwrBtn = static_cast<uint8_t>(v);
+      SETTINGS.saveToFile();
+    };
+    menuItems.push_back(powerEntry);
+
     MenuEntry chapterEntry;
     chapterEntry.item = MenuItem::ChapterSkip;
     chapterEntry.group = GroupType::CONTROLS;
@@ -975,6 +1002,7 @@ void SettingsDrawer::applyChange(int delta) {
     case MenuItem::PageAutoTurn:
     case MenuItem::ReaderImageGrayscale:
     case MenuItem::ReaderSmartImageRefresh:
+    case MenuItem::ReaderPowerButton:
     case MenuItem::StatusBarLeft:
     case MenuItem::StatusBarMiddle:
     case MenuItem::StatusBarRight:
@@ -989,5 +1017,5 @@ void SettingsDrawer::applyChange(int delta) {
       break;
   }
 
-  if (onSettingsChanged) onSettingsChanged();
+  if (selected.item != MenuItem::ReaderPowerButton && onSettingsChanged) onSettingsChanged();
 }
