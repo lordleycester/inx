@@ -34,38 +34,45 @@ void UiRender::buttonHints(const int fontId, const char* btn1, const char* btn2,
 void UiRender::sideButtonHints(const int fontId, const char* powerBtn, const char* topBtn,
                                    const char* bottomBtn) const {
   if (gfx.deviceIsX3()) {
-    constexpr int paddingX = 8;
-    constexpr int buttonHeight = 32;
-    constexpr int margin = 8;
+    constexpr int buttonWidth = 106;
+    constexpr int buttonHeight = 40;
+    constexpr int textYOffset = 7;
+    constexpr int sideW = buttonHeight;
+    constexpr int sideH = 110;
+    constexpr int sideY = 130;
     const int screenWidth = gfx.getScreenWidth();
-    const int screenHeight = gfx.getScreenHeight();
 
-    auto drawHint = [&](const char* label, int x, int y) {
+    auto drawPowerHint = [&](const char* label, int x, int y) {
       if (label == nullptr || label[0] == '\0') {
         return;
       }
       const int textWidth = gfx.text.getWidth(fontId, label);
-      const int width = std::max(48, textWidth + paddingX * 2);
-      gfx.rectangle.fill(x, y, width, buttonHeight, false, true);
-      gfx.rectangle.render(x, y, width, buttonHeight, true, true);
-      const int textX = x + (width - textWidth) / 2;
-      const int textY = y + 6;
+      gfx.rectangle.fill(x, y, buttonWidth, buttonHeight, false, true);
+      gfx.rectangle.render(x, y, buttonWidth, buttonHeight, true, true);
+      const int textX = x + (buttonWidth - 1 - textWidth) / 2;
+      const int textY = y + textYOffset;
       gfx.text.render(fontId, textX, textY, label);
     };
 
+    auto drawSideHint = [&](const char* label, int x) {
+      if (label == nullptr || label[0] == '\0') {
+        return;
+      }
+      gfx.rectangle.fill(x, sideY, sideW, sideH, false, true);
+      gfx.rectangle.render(x, sideY, sideW, sideH, true, true);
+      const int textWidth = gfx.text.getWidth(fontId, label);
+      const int textHeight = gfx.text.getFontAscenderSize(fontId);
+      const int textX = x + (sideW - textHeight) / 2;
+      const int textY = sideY + (sideH + textWidth) / 2;
+      gfx.text.rotated90CW(fontId, textX, textY, label);
+    };
+
     if (powerBtn != nullptr && powerBtn[0] != '\0') {
-      const int textWidth = gfx.text.getWidth(fontId, powerBtn);
-      const int width = std::max(56, textWidth + paddingX * 2);
-      drawHint(powerBtn, screenWidth - width - margin, margin);
+      drawPowerHint(powerBtn, screenWidth - buttonWidth - 10, 0);
     }
 
-    const int sideY = (screenHeight - buttonHeight) / 2;
-    drawHint(topBtn, margin, sideY);
-    if (bottomBtn != nullptr && bottomBtn[0] != '\0') {
-      const int textWidth = gfx.text.getWidth(fontId, bottomBtn);
-      const int width = std::max(48, textWidth + paddingX * 2);
-      drawHint(bottomBtn, screenWidth - width - margin, sideY);
-    }
+    drawSideHint(topBtn, 0);
+    drawSideHint(bottomBtn, screenWidth - sideW);
     return;
   }
 
