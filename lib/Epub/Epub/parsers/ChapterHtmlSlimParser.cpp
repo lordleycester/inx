@@ -311,6 +311,54 @@ void extractSelectorAttributes(const XML_Char* name, const XML_Char** atts, std:
   }
 }
 
+bool classAttrsShareToken(const std::string& a, const std::string& b) {
+  size_t start = 0;
+  while (start < a.size()) {
+    while (start < a.size() && std::isspace(static_cast<unsigned char>(a[start]))) {
+      ++start;
+    }
+    size_t end = start;
+    while (end < a.size() && !std::isspace(static_cast<unsigned char>(a[end]))) {
+      ++end;
+    }
+    if (end > start) {
+      const std::string token = a.substr(start, end - start);
+      size_t bStart = 0;
+      while (bStart < b.size()) {
+        while (bStart < b.size() && std::isspace(static_cast<unsigned char>(b[bStart]))) {
+          ++bStart;
+        }
+        size_t bEnd = bStart;
+        while (bEnd < b.size() && !std::isspace(static_cast<unsigned char>(b[bEnd]))) {
+          ++bEnd;
+        }
+        if (bEnd > bStart && token == b.substr(bStart, bEnd - bStart)) {
+          return true;
+        }
+        bStart = bEnd;
+      }
+    }
+    start = end;
+  }
+  return false;
+}
+
+bool attrEqualsIgnoreCase(const XML_Char** atts, const char* name, const char* expected) {
+  if (atts == nullptr) {
+    return false;
+  }
+  for (int i = 0; atts[i]; i += 2) {
+    if (strcmp(atts[i], name) != 0) {
+      continue;
+    }
+    std::string value = atts[i + 1] ? atts[i + 1] : "";
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value == expected;
+  }
+  return false;
+}
+
 /**
  * Loads all CSS rules from the EPUB cache using CssParser
  */
@@ -338,6 +386,7 @@ void ChapterHtmlSlimParser::resetStructuralStateForParsePass() {
   currentBlockMarginBottomPx = 0;
   currentBlockPaddingBottomPx = 0;
   currentBlockBorderBottomPx = 0;
+  pendingFallbackHr_ = PendingFallbackHorizontalRule();
   inTable_ = false;
   tableShowBorders_ = false;
   tableDepth_ = INT_MAX;
@@ -1301,6 +1350,17 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
     return;
   }
 
+  if (self->pendingFallbackHr_.active) {
+    const bool sameDecorativeDivider =
+        tagLower == "div" && attrEqualsIgnoreCase(atts, "aria-hidden", "true") &&
+        classAttrsShareToken(self->pendingFallbackHr_.classAttr, classAttr);
+    if (sameDecorativeDivider) {
+      self->pendingFallbackHr_ = PendingFallbackHorizontalRule();
+    } else {
+      self->emitPendingFallbackHorizontalRule();
+    }
+  }
+
   if (self->handleTableStartElement(name, atts, tagLower, classAttr, idAttr, styleAttr)) {
     return;
   }
@@ -1448,6 +1508,10 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
         self->flushPartWordBuffer();
       }
       continue;
+    }
+
+    if (self->pendingFallbackHr_.active) {
+      self->emitPendingFallbackHorizontalRule();
     }
 
     if (s[i] == (XML_Char)0xEF && i + 2 < len && s[i + 1] == (XML_Char)0xBB && s[i + 2] == (XML_Char)0xBF) {
@@ -1664,10 +1728,12 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
       cssParser.getParagraphSpacingTopPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
   const int spacingBottom =
       cssParser.getParagraphSpacingBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
-  if (spacingTop > 0 && currentPageNextY > 0) {
-    applyVerticalSpacing(spacingTop);
-  }
   const int defaultHrGap = (renderer.text.getLineHeight(fontId) / 2) + 5;
+  auto applyHrTopSpacing = [&]() {
+    if (spacingTop > 0 && currentPageNextY > 0) {
+      applyVerticalSpacing(spacingTop);
+    }
+  };
 
   bool renderedRule = false;
   const std::string bgInternalPath = cssParser.getBackgroundImagePath(tagLower, classAttr, idAttr, styleAttr, internalPath);
@@ -1701,8 +1767,9 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
         imgH = viewportHeight;
       }
       // Default top margin when CSS didn't specify one (addImageToPage already adds a gap below).
+      applyHrTopSpacing();
       if (spacingTop <= 0 && currentPageNextY > 0) {
-        applyVerticalSpacing((renderer.text.getLineHeight(fontId) / 2) + 5);
+        applyVerticalSpacing(defaultHrGap);
       }
       addImageToPage(cacheImgPath, imgW, imgH);
       renderedRule = true;
@@ -1715,6 +1782,7 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
         cssParser.getBorderBottomPx(tagLower, classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
     if (borderTop > 0 || borderBottom > 0) {
       const int cssHeight = cssParser.getHeight(classAttr, idAttr, styleAttr, viewportWidth, viewportHeight);
+      applyHrTopSpacing();
       if (borderTop > 0) {
         addCssBorderLine(borderTop, borderStyleCodeFromKeyword(
                                         cssParser.getBorderStyleKeyword("top", classAttr, idAttr, styleAttr, tagLower)));
@@ -1732,27 +1800,55 @@ void ChapterHtmlSlimParser::addHorizontalRule(const std::string& tagLower, const
   }
 
   if (!renderedRule) {
-    if (spacingTop <= 0 && currentPageNextY > 0) {
-      applyVerticalSpacing(defaultHrGap);
-    }
-    if (currentPage && currentPageNextY + PageHorizontalRule::HEIGHT > viewportHeight) {
-      if (!currentPage->elements.empty()) completePageFn(std::move(currentPage));
-      currentPage.reset(new Page());
-      currentPageNextY = 0;
-    }
-    if (!currentPage) {
-      currentPage.reset(new Page());
-    }
-
-    const int x = std::max(0, (viewportWidth - PageHorizontalRule::WIDTH) / 2);
-    currentPage->elements.push_back(
-        std::make_shared<PageHorizontalRule>(static_cast<int16_t>(x), static_cast<int16_t>(currentPageNextY)));
-    currentPageNextY += PageHorizontalRule::HEIGHT;
+    pendingFallbackHr_.active = true;
+    pendingFallbackHr_.classAttr = classAttr;
+    pendingFallbackHr_.spacingTop = spacingTop;
+    pendingFallbackHr_.spacingBottom = spacingBottom;
+    return;
   }
 
   if (spacingBottom > 0) {
     applyVerticalSpacing(spacingBottom);
-  } else if (!renderedRule) {
+  }
+}
+
+void ChapterHtmlSlimParser::emitPendingFallbackHorizontalRule() {
+  if (!pendingFallbackHr_.active) {
+    return;
+  }
+
+  const int spacingTop = pendingFallbackHr_.spacingTop;
+  const int spacingBottom = pendingFallbackHr_.spacingBottom;
+  pendingFallbackHr_ = PendingFallbackHorizontalRule();
+
+  if (currentTextBlock && !currentTextBlock->isEmpty()) {
+    makePages();
+  }
+
+  const int defaultHrGap = (renderer.text.getLineHeight(fontId) / 2) + 5;
+  if (spacingTop > 0 && currentPageNextY > 0) {
+    applyVerticalSpacing(spacingTop);
+  } else if (currentPageNextY > 0) {
+    applyVerticalSpacing(defaultHrGap);
+  }
+
+  if (currentPage && currentPageNextY + PageHorizontalRule::HEIGHT > viewportHeight) {
+    if (!currentPage->elements.empty()) completePageFn(std::move(currentPage));
+    currentPage.reset(new Page());
+    currentPageNextY = 0;
+  }
+  if (!currentPage) {
+    currentPage.reset(new Page());
+  }
+
+  const int x = std::max(0, (viewportWidth - PageHorizontalRule::WIDTH) / 2);
+  currentPage->elements.push_back(
+      std::make_shared<PageHorizontalRule>(static_cast<int16_t>(x), static_cast<int16_t>(currentPageNextY)));
+  currentPageNextY += PageHorizontalRule::HEIGHT;
+
+  if (spacingBottom > 0) {
+    applyVerticalSpacing(spacingBottom);
+  } else {
     applyVerticalSpacing(defaultHrGap);
   }
 }
@@ -2022,6 +2118,7 @@ bool ChapterHtmlSlimParser::parseAndBuildPages(bool skipImageProcessing) {
     return false;
   }
 
+  emitPendingFallbackHorizontalRule();
   flushPartWordBuffer();
 
   if (currentTextBlock && !currentTextBlock->isEmpty()) {
